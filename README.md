@@ -12,17 +12,39 @@ investigations in DeepSeek Harness.
 > canonical AI conversations used to run the injected analysis skills. This
 > plugin expects DeepDeck's App runtime service when it is mounted.
 
-## Screenshot
+## Screenshots
 
-Captured from the standalone DeepDeck desktop App window—not a browser tab.
-Video playback, evidence highlights, chapters, narrative sections and inspected
-keyframes stay synchronized while the original audit report remains available.
+Captured from the standalone DeepDeck desktop App using a real completed
+investigation: a 44-minute interview with 558 transcript segments, 12 narrative
+sections and 15 inspected frames.
 
-![Video Sherlock running with DeepDeck](docs/images/deepdeck-video-sherlock.png)
+### Case overview
 
-The empty workspace uses the same restrained desktop UI and opens the
-investigation composer directly. This screenshot shows the English locale;
-中文 follows the same layout.
+![Video Sherlock case overview in DeepDeck](docs/images/video-sherlock-overview.jpg)
+
+### Synchronized highlight analysis
+
+Selecting a highlight seeks the source video, updates the current narrative and
+surfaces the nearest inspected frame with its timestamp and observation.
+
+![Synchronized video highlight analysis](docs/images/video-sherlock-highlight-analysis.jpg)
+
+### Transcript signals and narrative map
+
+![Transcript density and narrative map](docs/images/video-sherlock-narrative-map.jpg)
+
+### Keyframe evidence wall
+
+![Inspected keyframe evidence wall](docs/images/video-sherlock-evidence-wall.jpg)
+
+### Limitations and audit report
+
+![Limitations ledger and full audit report](docs/images/video-sherlock-audit-report.jpg)
+
+### Localized empty workspace
+
+The empty workspace opens the investigation composer directly. This screenshot
+shows the English locale; 中文 follows the same layout.
 
 ![Video Sherlock localized empty workspace](docs/images/video-sherlock-empty-state.jpg)
 
