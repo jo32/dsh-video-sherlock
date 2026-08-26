@@ -1,5 +1,6 @@
-import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { FormEvent, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { createTranslator, resolveUiLocale, type CopyKey, type Translate, type UiLocale } from './i18n'
 import './styles.css'
 import './player.css'
 import './layout-fix.css'
@@ -8,6 +9,30 @@ import './vercel.css'
 const APP_ID = 'video-sherlock-app'
 const API = '/api/apps/video-sherlock-app'
 const CHANNEL = 'deepdeck-app-conversations-v1'
+const LOCALE_CHANNEL = 'deepdeck-video-sherlock-locale-v1'
+
+type I18nValue = {
+  locale: UiLocale
+  t: Translate
+}
+
+const I18nContext = createContext<I18nValue | null>(null)
+
+function useI18n(): I18nValue {
+  const value = useContext(I18nContext)
+  if (!value) throw new Error('Video Sherlock i18n context is missing')
+  return value
+}
+
+function requestedBrowserLocales(): string[] {
+  if (typeof navigator === 'undefined') return []
+  return [...(navigator.languages ?? []), navigator.language].filter(Boolean)
+}
+
+function initialUiLocale(): UiLocale {
+  const requested = new URLSearchParams(window.location.search).get('locale')
+  return resolveUiLocale(requested, requestedBrowserLocales())
+}
 
 type ReportStatus = 'complete' | 'processing'
 
@@ -147,20 +172,24 @@ function BrandMark() {
   return <div className="brandMark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="6.25" stroke="currentColor" strokeWidth="1.5" /><path d="m14.6 14.6 5.15 5.15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><path d="m8.75 7.5 3.75 2.5-3.75 2.5v-5Z" fill="currentColor" /></svg></div>
 }
 
-function EmptyStage() {
+function RefreshIcon() {
+  return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M15.25 6.75A6.25 6.25 0 1 0 16 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><path d="M15.25 3.75v3h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+}
+
+function EmptyStage({ onCreate }: { onCreate: () => void }) {
+  const { t } = useI18n()
   return (
     <section className="emptyStage">
-      <div className="scanMark"><span /></div>
-      <div className="eyebrow">Local-first evidence intelligence</div>
-      <h1>Turn footage<br />into evidence.</h1>
-      <p>提交视频链接或本地路径。Agent 会组合 <b>analyze-video</b> 与 <b>video-sherlock-visualize</b>，生成可审计报告和交互式证据面板。</p>
-      <div className="pipeline">
-        {[
-          ['01', 'Acquire', '元数据与字幕'],
-          ['02', 'Listen', '本地语音识别'],
-          ['03', 'Inspect', '语义检索与关键帧'],
-          ['04', 'Visualize', '时间轴与证据墙'],
-        ].map(([index, title, copy]) => <div className="pipelineStep" key={index}><span>{index}</span><b>{title}</b><small>{copy}</small></div>)}
+      <div className="emptyContent">
+        <div className="emptyIcon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><rect x="3.75" y="5.25" width="12.5" height="13.5" rx="2" stroke="currentColor" strokeWidth="1.5" /><path d="m8.25 9 4.5 3-4.5 3V9Z" fill="currentColor" /><circle cx="16.75" cy="16.75" r="3.25" fill="#050505" stroke="currentColor" strokeWidth="1.5" /><path d="m19.15 19.15 1.6 1.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+        </div>
+        <h1>{t('empty.title')}</h1>
+        <p>{t('empty.description')}</p>
+        <button type="button" className="emptyAction" onClick={onCreate}>{t('action.newInvestigation')} <span aria-hidden="true">→</span></button>
+        <div className="emptyCapabilities" aria-label={t('empty.outputs')}>
+          {[t('empty.transcript'), t('empty.timeline'), t('empty.report')].map(item => <span key={item}><i aria-hidden="true">✓</i>{item}</span>)}
+        </div>
       </div>
     </section>
   )
@@ -174,7 +203,7 @@ function Panel({ title, detail, children, className = '' }: React.PropsWithChild
   return <section className={`vizPanel ${className}`}><header><b>{title}</b><span>{detail}</span></header>{children}</section>
 }
 
-function EvidencePlayer({ visualization, caseId, videoPath, videoRef, currentTime, onTimeChange, onSeek, zh }: {
+function EvidencePlayer({ visualization, caseId, videoPath, videoRef, currentTime, onTimeChange, onSeek }: {
   visualization: Visualization
   caseId: string
   videoPath: string
@@ -182,8 +211,8 @@ function EvidencePlayer({ visualization, caseId, videoPath, videoRef, currentTim
   currentTime: number
   onTimeChange: (time: number) => void
   onSeek: (time: number, autoplay?: boolean, reveal?: boolean) => void
-  zh: boolean
 }) {
+  const { t } = useI18n()
   const duration = Math.max(1, visualization.duration_seconds || 0)
   const progress = Math.max(0, Math.min(100, currentTime / duration * 100))
   const activeTopic = visualization.timeline.find(item => currentTime >= item.start_seconds && currentTime < item.end_seconds)
@@ -194,8 +223,8 @@ function EvidencePlayer({ visualization, caseId, videoPath, videoRef, currentTim
   const activeFrame = nearestFrame && Math.abs(nearestFrame.timestamp_seconds - currentTime) <= 18 ? nearestFrame : null
   const poster = visualization.frames[0]?.path ? artifactUrl(caseId, visualization.frames[0].path) : undefined
   return (
-    <section className="evidencePlayer" aria-label="Interactive evidence player">
-      <div className="playerHeading"><div><span className="liveDot" />{zh ? '证据播放' : 'EVIDENCE PLAYBACK'}</div><p>{zh ? '拖动时间轴或点击高光点，播放器与证据自动同步' : 'Drag the timeline or select a highlight to synchronize evidence.'}</p></div>
+    <section className="evidencePlayer" aria-label={t('player.aria')}>
+      <div className="playerHeading"><div><span className="liveDot" />{t('player.heading')}</div><p>{t('player.help')}</p></div>
       <div className="playerGrid">
         <div className="videoStage">
           <video
@@ -211,12 +240,12 @@ function EvidencePlayer({ visualization, caseId, videoPath, videoRef, currentTim
           <div className="timeReadout"><strong>{formatTime(currentTime)}</strong><span>/ {formatTime(duration)}</span></div>
         </div>
         <aside className="nowPanel">
-          <span className="nowLabel">{zh ? '当前调查节点' : 'NOW IN THE INVESTIGATION'}</span>
-          <strong>{activeTopic?.topic || (zh ? '浏览证据时间线' : 'Browse the evidence timeline')}</strong>
-          <p>{activeTopic?.evidence || (zh ? '播放视频或选择下方主题，查看此刻对应的论点与视觉证据。' : 'Play the video or select a topic to inspect the synchronized argument and visual evidence.')}</p>
+          <span className="nowLabel">{t('player.now')}</span>
+          <strong>{activeTopic?.topic || t('player.browseTitle')}</strong>
+          <p>{activeTopic?.evidence || t('player.browseBody')}</p>
           {activeFrame && <button className="activeEvidence" onClick={() => onSeek(activeFrame.timestamp_seconds, false, false)}>
-            <img src={artifactUrl(caseId, activeFrame.path)} alt="Nearest inspected evidence" />
-            <span><small>{zh ? '最近检查帧' : 'NEAREST INSPECTED FRAME'} · {formatTime(activeFrame.timestamp_seconds)}</small><b>{activeFrame.observation}</b></span>
+            <img src={artifactUrl(caseId, activeFrame.path)} alt={t('player.nearestFrameAlt')} />
+            <span><small>{t('player.nearestFrame')} · {formatTime(activeFrame.timestamp_seconds)}</small><b>{activeFrame.observation}</b></span>
           </button>}
         </aside>
       </div>
@@ -227,12 +256,12 @@ function EvidencePlayer({ visualization, caseId, videoPath, videoRef, currentTim
           </div>
           <div className="playbackProgress" aria-hidden="true" />
           <div className="playbackHead" aria-hidden="true"><span /></div>
-          <input aria-label={zh ? '视频时间轴' : 'Video timeline'} type="range" min={0} max={duration} step={0.1} value={Math.min(duration, currentTime)} onChange={event => onSeek(Number(event.target.value), false, false)} />
+          <input aria-label={t('player.timeline')} type="range" min={0} max={duration} step={0.1} value={Math.min(duration, currentTime)} onChange={event => onSeek(Number(event.target.value), false, false)} />
           <div className="evidenceMarkers">
-            {visualization.frames.map(frame => <button key={frame.id} className={activeFrame?.id === frame.id ? 'active' : ''} style={{ left: `${Math.max(0, Math.min(100, frame.timestamp_seconds / duration * 100))}%` }} title={`${formatTime(frame.timestamp_seconds)} · ${frame.query || frame.observation}`} aria-label={zh ? `跳转到 ${formatTime(frame.timestamp_seconds)} 高光证据` : `Jump to evidence highlight at ${formatTime(frame.timestamp_seconds)}`} onClick={() => onSeek(frame.timestamp_seconds, true, false)}><span /></button>)}
+            {visualization.frames.map(frame => <button key={frame.id} className={activeFrame?.id === frame.id ? 'active' : ''} style={{ left: `${Math.max(0, Math.min(100, frame.timestamp_seconds / duration * 100))}%` }} title={`${formatTime(frame.timestamp_seconds)} · ${frame.query || frame.observation}`} aria-label={t('player.jumpToEvidence', { time: formatTime(frame.timestamp_seconds) })} onClick={() => onSeek(frame.timestamp_seconds, true, false)}><span /></button>)}
           </div>
         </div>
-        <div className="scrubberAxis"><span>00:00</span><b>{visualization.frames.length} {zh ? '个证据高光' : 'EVIDENCE HIGHLIGHTS'}</b><span>{formatTime(duration)}</span></div>
+        <div className="scrubberAxis"><span>00:00</span><b>{t('player.highlights', { count: visualization.frames.length })}</b><span>{formatTime(duration)}</span></div>
       </div>
       <div className="chapterStrip">
         {visualization.timeline.map(item => <button key={item.id} className={activeTopic?.id === item.id ? 'active' : ''} onClick={() => onSeek(item.start_seconds, false, false)}><span>{formatTime(item.start_seconds)}</span>{item.topic}</button>)}
@@ -241,25 +270,27 @@ function EvidencePlayer({ visualization, caseId, videoPath, videoRef, currentTim
   )
 }
 
-function DensityChart({ values, engine, zh }: { values: Visualization['transcript_density']; engine: string; zh: boolean }) {
+function DensityChart({ values, engine }: { values: Visualization['transcript_density']; engine: string }) {
+  const { t } = useI18n()
   if (!values.length) return null
   return (
-    <Panel title={zh ? '语音信号' : 'Speech signal'} detail={`${zh ? '转录密度' : 'Transcript density'} · ${engine || 'unknown'}`}>
+    <Panel title={t('density.title')} detail={t('density.detail', { engine: engine || t('evidence.confidenceUnknown') })}>
       <div className="densityChart">
         {values.map((item, index) => (
-          <div className="densityBar" key={index} style={{ height: `${Math.max(5, item.intensity * 100)}%` }} title={`${formatTime(item.start_seconds)} · ${item.segments} segments`} />
+          <div className="densityBar" key={index} style={{ height: `${Math.max(5, item.intensity * 100)}%` }} title={`${formatTime(item.start_seconds)} · ${t('density.segments', { count: item.segments })}`} />
         ))}
       </div>
-      <div className="axis"><span>00:00</span><span>{zh ? '转录活跃度' : 'TRANSCRIPT ACTIVITY'}</span><span>{formatTime(values.at(-1)?.start_seconds ?? 0)}</span></div>
+      <div className="axis"><span>00:00</span><span>{t('density.activity')}</span><span>{formatTime(values.at(-1)?.start_seconds ?? 0)}</span></div>
     </Panel>
   )
 }
 
-function NarrativeMap({ timeline, duration, currentTime, onSeek, zh }: { timeline: TimelineItem[]; duration: number; currentTime: number; onSeek: (time: number) => void; zh: boolean }) {
+function NarrativeMap({ timeline, duration, currentTime, onSeek }: { timeline: TimelineItem[]; duration: number; currentTime: number; onSeek: (time: number) => void }) {
+  const { t } = useI18n()
   if (!timeline.length) return null
   const safeDuration = Math.max(1, duration)
   return (
-    <Panel title={zh ? '叙事地图' : 'Narrative map'} detail={zh ? '点击主题跳转到原视频' : 'Select a topic to jump to the source video'}>
+    <Panel title={t('narrative.title')} detail={t('narrative.detail')}>
       <div className="timelineTrack">
         {timeline.map((item, index) => {
           const left = Math.max(0, Math.min(100, item.start_seconds / safeDuration * 100))
@@ -278,21 +309,22 @@ function NarrativeMap({ timeline, duration, currentTime, onSeek, zh }: { timelin
   )
 }
 
-function EvidenceWall({ frames, caseId, currentTime, onSeek, zh }: { frames: EvidenceFrame[]; caseId: string; currentTime: number; onSeek: (time: number, autoplay?: boolean) => void; zh: boolean }) {
+function EvidenceWall({ frames, caseId, currentTime, onSeek }: { frames: EvidenceFrame[]; caseId: string; currentTime: number; onSeek: (time: number, autoplay?: boolean) => void }) {
+  const { t } = useI18n()
   if (!frames.length) return null
   return (
-    <Panel title={zh ? '视觉证据' : 'Visual evidence'} detail={zh ? `${frames.length} 个已检查关键帧 · 点击回看` : `${frames.length} inspected keyframes · Select to review`} className="evidencePanel">
+    <Panel title={t('evidence.title')} detail={t('evidence.detail', { count: frames.length })} className="evidencePanel">
       <div className="evidenceWall">
         {frames.map((frame) => (
           <article className={`evidenceCard ${Math.abs(frame.timestamp_seconds - currentTime) <= 18 ? 'active' : ''}`} key={frame.id} role="button" tabIndex={0} onClick={() => onSeek(frame.timestamp_seconds, true)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSeek(frame.timestamp_seconds, true) } }}>
             <div className="frameImage">
-              <img src={artifactUrl(caseId, frame.path)} loading="lazy" alt={frame.observation || 'Video evidence frame'} />
+              <img src={artifactUrl(caseId, frame.path)} loading="lazy" alt={frame.observation || t('evidence.frameAlt')} />
               <span>▶ {formatTime(frame.timestamp_seconds)}</span>
             </div>
             <div className="frameCopy">
-              <b>{frame.query || frame.source || 'Selected evidence'}</b>
-              <p>{frame.observation || frame.relevance || 'Awaiting visual observation'}</p>
-              <footer><em className={`confidence ${frame.confidence}`}>{frame.confidence || 'unknown'}</em><span>{frame.source}</span></footer>
+              <b>{frame.query || frame.source || t('evidence.selected')}</b>
+              <p>{frame.observation || frame.relevance || t('evidence.awaiting')}</p>
+              <footer><em className={`confidence ${frame.confidence}`}>{frame.confidence || t('evidence.confidenceUnknown')}</em><span>{frame.source}</span></footer>
             </div>
           </article>
         ))}
@@ -302,7 +334,7 @@ function EvidenceWall({ frames, caseId, currentTime, onSeek, zh }: { frames: Evi
 }
 
 function EvidenceDashboard({ visualization, caseId, videoPath }: { visualization: Visualization; caseId: string; videoPath?: string }) {
-  const zh = caseId.endsWith('-zh')
+  const { locale, t } = useI18n()
   const metrics = visualization.metrics ?? {} as Visualization['metrics']
   const videoRef = useRef<HTMLVideoElement>(null)
   const playerRef = useRef<HTMLDivElement>(null)
@@ -318,25 +350,26 @@ function EvidenceDashboard({ visualization, caseId, videoPath }: { visualization
   }, [visualization.duration_seconds])
   return (
     <div className="dashboard">
-      {visualization.summary && <div className="summaryCallout"><span>{zh ? '执行摘要' : 'Executive synthesis'}</span><p>{visualization.summary}</p></div>}
-      {videoPath && <div ref={playerRef}><EvidencePlayer visualization={visualization} caseId={caseId} videoPath={videoPath} videoRef={videoRef} currentTime={currentTime} onTimeChange={setCurrentTime} onSeek={seek} zh={zh} /></div>}
-      {!videoPath && <div className="videoUnavailable">{zh ? '原始视频未在案件目录内，时间轴仍可浏览，但无法直接播放。' : 'The source video is unavailable in this case. The evidence timeline remains browsable.'}</div>}
+      {visualization.summary && <div className="summaryCallout"><span>{t('dashboard.summary')}</span><p>{visualization.summary}</p></div>}
+      {videoPath && <div ref={playerRef}><EvidencePlayer visualization={visualization} caseId={caseId} videoPath={videoPath} videoRef={videoRef} currentTime={currentTime} onTimeChange={setCurrentTime} onSeek={seek} /></div>}
+      {!videoPath && <div className="videoUnavailable">{t('dashboard.videoUnavailable')}</div>}
       <div className="metrics">
-        <Metric value={formatTime(visualization.duration_seconds)} label={zh ? '时长' : 'Duration'} tone={0} />
-        <Metric value={Number(metrics.transcript_segments || 0).toLocaleString()} label={zh ? '转录片段' : 'Transcript segments'} tone={35} />
-        <Metric value={Number(metrics.inspected_frames || 0).toLocaleString()} label={zh ? '检查帧' : 'Inspected frames'} tone={70} />
-        <Metric value={Number(metrics.timeline_sections || 0).toLocaleString()} label={zh ? '主题章节' : 'Topic sections'} tone={105} />
+        <Metric value={formatTime(visualization.duration_seconds)} label={t('metrics.duration')} tone={0} />
+        <Metric value={Number(metrics.transcript_segments || 0).toLocaleString(locale)} label={t('metrics.transcriptSegments')} tone={35} />
+        <Metric value={Number(metrics.inspected_frames || 0).toLocaleString(locale)} label={t('metrics.inspectedFrames')} tone={70} />
+        <Metric value={Number(metrics.timeline_sections || 0).toLocaleString(locale)} label={t('metrics.topicSections')} tone={105} />
       </div>
-      <DensityChart values={visualization.transcript_density ?? []} engine={visualization.transcript_engine} zh={zh} />
-      <NarrativeMap timeline={visualization.timeline ?? []} duration={visualization.duration_seconds} currentTime={currentTime} onSeek={seek} zh={zh} />
-      {!!visualization.topics?.length && <Panel title={zh ? '语义索引' : 'Semantic index'} detail={zh ? `${visualization.topics.length} 个检测主题` : `${visualization.topics.length} detected topics`}><div className="topicChips">{visualization.topics.map(topic => <span key={topic}>{topic}</span>)}</div></Panel>}
-      <EvidenceWall frames={visualization.frames ?? []} caseId={caseId} currentTime={currentTime} onSeek={seek} zh={zh} />
-      {!!visualization.limitations?.length && <Panel title={zh ? '局限性记录' : 'Limitations ledger'} detail={zh ? '已知缺口与不确定性' : 'Known gaps and uncertainty'}><ul className="limitations">{visualization.limitations.map(item => <li key={item}>{item}</li>)}</ul></Panel>}
+      <DensityChart values={visualization.transcript_density ?? []} engine={visualization.transcript_engine} />
+      <NarrativeMap timeline={visualization.timeline ?? []} duration={visualization.duration_seconds} currentTime={currentTime} onSeek={seek} />
+      {!!visualization.topics?.length && <Panel title={t('topics.title')} detail={t('topics.detail', { count: visualization.topics.length })}><div className="topicChips">{visualization.topics.map(topic => <span key={topic}>{topic}</span>)}</div></Panel>}
+      <EvidenceWall frames={visualization.frames ?? []} caseId={caseId} currentTime={currentTime} onSeek={seek} />
+      {!!visualization.limitations?.length && <Panel title={t('limitations.title')} detail={t('limitations.detail')}><ul className="limitations">{visualization.limitations.map(item => <li key={item}>{item}</li>)}</ul></Panel>}
     </div>
   )
 }
 
 function ReportDocument({ markdown, caseId }: { markdown: string; caseId: string }) {
+  const { t } = useI18n()
   const blocks = useMemo(() => {
     const lines = markdown.replace(/\r/g, '').split('\n')
     const result: React.ReactNode[] = []
@@ -379,24 +412,23 @@ function ReportDocument({ markdown, caseId }: { markdown: string; caseId: string
     return result
   }, [markdown, caseId])
   if (!markdown) return null
-  const zh = caseId.endsWith('-zh')
-  return <details className="reportDocument"><summary>{zh ? '完整审计报告' : 'Full audit report'} <span>report.md</span></summary><article>{blocks}</article></details>
+  return <details className="reportDocument"><summary>{t('report.full')} <span>report.md</span></summary><article>{blocks}</article></details>
 }
 
-function CaseReader({ report, loading }: { report: ReportDetail | null; loading: boolean }) {
-  if (loading) return <div className="loadingStage"><div className="scanMark"><span /></div><p>Loading evidence graph…</p></div>
-  if (!report) return <EmptyStage />
+function CaseReader({ report, loading, onCreate }: { report: ReportDetail | null; loading: boolean; onCreate: () => void }) {
+  const { t } = useI18n()
+  if (loading) return <div className="loadingStage"><div className="scanMark"><span /></div><p>{t('case.loadingGraph')}</p></div>
+  if (!report) return <EmptyStage onCreate={onCreate} />
   const visualization = normalizeVisualization(report.visualization)
-  const zh = report.id.endsWith('-zh')
   return (
     <div className="caseReader">
       <header className="caseHeader">
-        <div className="eyebrow">{report.status === 'complete' ? (zh ? '已验证案件' : 'Verified case file') : (zh ? '调查进行中' : 'Investigation in progress')}</div>
+        <div className="eyebrow">{report.status === 'complete' ? t('case.verified') : t('case.inProgress')}</div>
         <h1>{report.title}</h1>
-        <p>{report.source || 'Local video investigation'}</p>
+        <p>{report.source || t('case.localSource')}</p>
       </header>
       {visualization ? <EvidenceDashboard visualization={visualization} caseId={report.id} videoPath={report.videoPath} /> : (
-        <div className="pendingCard"><div className="scanMark small"><span /></div><div><b>Agent 正在构建证据图谱</b><p>字幕密度、主题时间轴与关键帧证据墙会随 visualization.json 自动出现。</p></div></div>
+        <div className="pendingCard"><div className="scanMark small"><span /></div><div><b>{t('case.pendingTitle')}</b><p>{t('case.pendingBody')}</p></div></div>
       )}
       <ReportDocument markdown={report.markdown} caseId={report.id} />
     </div>
@@ -404,6 +436,7 @@ function CaseReader({ report, loading }: { report: ReportDetail | null; loading:
 }
 
 function Composer({ onSubmit, busy, open, onClose }: { onSubmit: (payload: Record<string, unknown>) => void | Promise<void>; busy: boolean; open: boolean; onClose: () => void }) {
+  const { t } = useI18n()
   const [source, setSource] = useState('')
   const [focus, setFocus] = useState('')
   const [language, setLanguage] = useState('auto')
@@ -416,34 +449,54 @@ function Composer({ onSubmit, busy, open, onClose }: { onSubmit: (payload: Recor
   }
   return (
     <aside className={`composer ${open ? 'open' : ''}`}>
-      <div className="composerTop"><div className="eyebrow">New investigation</div><button type="button" className="composerClose" onClick={onClose} aria-label="关闭新建调查面板">×</button></div>
-      <h2>分析一个视频</h2>
-      <p className="composerIntro">Agent 会调用两个注入的 skill，把取证产物直接映射为本页面的数据可视化。</p>
+      <div className="composerTop"><div className="eyebrow">{t('composer.eyebrow')}</div><button type="button" className="composerClose" onClick={onClose} aria-label={t('action.closeComposer')}>×</button></div>
+      <h2>{t('composer.title')}</h2>
+      <p className="composerIntro">{t('composer.intro')}</p>
       <form onSubmit={submit}>
-        <label><span><b>视频来源</b><em>URL 或本地绝对路径</em></span><input required maxLength={4000} value={source} onChange={event => setSource(event.target.value)} placeholder="https://… 或 /Users/…/video.mp4" /></label>
-        <label><span><b>调查重点</b><em>可选</em></span><textarea maxLength={4000} value={focus} onChange={event => setFocus(event.target.value)} placeholder="核心论点、图表证据、产品演示、局限……" /></label>
-        <label><span><b>内容语言</b></span><select value={language} onChange={event => setLanguage(event.target.value)}><option value="auto">自动检测</option><option value="zh">中文 / 粤语优先</option><option value="en">English</option><option value="ja">日本語</option><option value="ko">한국어</option></select></label>
-        <div className="toggles"><label><input type="checkbox" checked={metadataOnly} onChange={event => setMetadataOnly(event.target.checked)} />先做轻量勘察</label><label><input type="checkbox" checked={noModelFetch} onChange={event => setNoModelFetch(event.target.checked)} />仅用缓存模型</label></div>
-        <button className="analyzeButton" disabled={busy}>{busy ? 'Opening Agent…' : '开始证据分析 →'}</button>
+        <label><span><b>{t('composer.source')}</b><em>{t('composer.sourceHint')}</em></span><input required maxLength={4000} value={source} onChange={event => setSource(event.target.value)} placeholder={t('composer.sourcePlaceholder')} /></label>
+        <label><span><b>{t('composer.focus')}</b><em>{t('composer.optional')}</em></span><textarea maxLength={4000} value={focus} onChange={event => setFocus(event.target.value)} placeholder={t('composer.focusPlaceholder')} /></label>
+        <label><span><b>{t('composer.contentLanguage')}</b></span><select value={language} onChange={event => setLanguage(event.target.value)}><option value="auto">{t('composer.languageAuto')}</option><option value="zh">{t('composer.languageZh')}</option><option value="en">{t('composer.languageEn')}</option><option value="ja">{t('composer.languageJa')}</option><option value="ko">{t('composer.languageKo')}</option></select></label>
+        <div className="toggles"><label><input type="checkbox" checked={metadataOnly} onChange={event => setMetadataOnly(event.target.checked)} />{t('composer.metadataOnly')}</label><label><input type="checkbox" checked={noModelFetch} onChange={event => setNoModelFetch(event.target.checked)} />{t('composer.cachedModelsOnly')}</label></div>
+        <button className="analyzeButton" disabled={busy}>{busy ? t('composer.opening') : t('composer.start')}</button>
       </form>
-      <div className="modelNotice"><i />首次完整分析可能按需下载 vq、FFmpeg 相关工具或阶段模型。有可用字幕时不会下载 ASR 模型。</div>
-      <div className="skillStack"><span>SKILL STACK</span><b>analyze-video</b><i>→</i><b>video-sherlock-visualize</b></div>
+      <div className="modelNotice"><i />{t('composer.modelNotice')}</div>
+      <div className="skillStack"><span>{t('composer.skillStack')}</span><b>analyze-video</b><i>→</i><b>video-sherlock-visualize</b></div>
     </aside>
   )
 }
 
 function App() {
+  const [locale, setLocale] = useState<UiLocale>(initialUiLocale)
+  const t = useMemo(() => createTranslator(locale), [locale])
   const [reports, setReports] = useState<ReportSummary[]>([])
   const [selectedId, setSelectedId] = useState('')
   const [report, setReport] = useState<ReportDetail | null>(null)
   const [loading, setLoading] = useState(false)
-  const [agentStatus, setAgentStatus] = useState('Skill ready')
+  const [agentStatusKey, setAgentStatusKey] = useState<CopyKey>('status.skillReady')
   const [busy, setBusy] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
   const [toast, setToast] = useState('')
   const channelRef = useRef<BroadcastChannel | null>(null)
   const clientIdRef = useRef(createRequestId())
   const activeRequestRef = useRef('')
+
+  useEffect(() => {
+    document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+  }, [locale])
+
+  useEffect(() => {
+    if (typeof BroadcastChannel !== 'function') return
+    const channel = new BroadcastChannel(LOCALE_CHANNEL)
+    const receive = (event: MessageEvent) => {
+      const message = event.data as { source?: string; type?: string; locale?: unknown }
+      if (message.source !== 'deepdeck-video-sherlock-client' || message.type !== 'locale') return
+      const next = resolveUiLocale(message.locale)
+      setLocale(next)
+    }
+    channel.addEventListener('message', receive)
+    channel.postMessage({ source: 'deepdeck-video-sherlock-app', type: 'locale-request' })
+    return () => channel.close()
+  }, [])
 
   const notify = useCallback((message: string) => {
     setToast(message)
@@ -454,7 +507,7 @@ function App() {
     try {
       const response = await fetch(`${API}/reports`, { cache: 'no-store' })
       const value = await response.json() as { reports?: ReportSummary[]; error?: string }
-      if (!response.ok) throw new Error(value.error || '无法读取报告')
+      if (!response.ok) throw new Error(value.error || t('error.readReports'))
       const next = Array.isArray(value.reports) ? value.reports : []
       setReports(current => {
         const persistedIds = new Set(next.map(item => item.id))
@@ -465,7 +518,7 @@ function App() {
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error))
     }
-  }, [notify])
+  }, [notify, t])
 
   const selectedSummary = useMemo(() => reports.find(item => item.id === selectedId), [reports, selectedId])
 
@@ -481,13 +534,13 @@ function App() {
     void fetch(`${API}/reports?id=${encodeURIComponent(selectedId)}`, { cache: 'no-store' })
       .then(async response => {
         const value = await response.json() as ReportDetail & { error?: string }
-        if (!response.ok) throw new Error(value.error || '无法读取报告')
+        if (!response.ok) throw new Error(value.error || t('error.readReports'))
         if (!cancelled) setReport(value)
       })
       .catch(error => { if (!cancelled) notify(error instanceof Error ? error.message : String(error)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [selectedId, selectedSummary?.pending, selectedSummary?.updatedAt, selectedSummary?.visualized, notify])
+  }, [selectedId, selectedSummary?.pending, selectedSummary?.updatedAt, selectedSummary?.visualized, notify, t])
 
   useEffect(() => {
     void loadReports(true)
@@ -498,60 +551,66 @@ function App() {
       channel.addEventListener('message', event => {
         const message = event.data as AgentMessage
         if (message.source !== 'deepdeck-app-runtime' || message.type !== 'preview-state' || message.targetClientId !== clientIdRef.current || message.appId !== APP_ID || message.requestId !== activeRequestRef.current) return
-        if (message.status === 'preparing') setAgentStatus('Preparing skill…')
-        if (message.status === 'running') { setAgentStatus('Agent investigation active'); setBusy(false) }
-        if (message.status === 'completed') { setAgentStatus('Evidence dashboard ready'); setBusy(false); notify('Agent 已完成，正在刷新证据面板。'); void loadReports(true) }
-        if (message.status === 'failed' || message.status === 'cancelled') { setAgentStatus(`Agent ${message.status}`); setBusy(false); notify(message.error || 'Agent 任务未完成。') }
+        if (message.status === 'preparing') setAgentStatusKey('status.preparingSkill')
+        if (message.status === 'running') { setAgentStatusKey('status.investigationActive'); setBusy(false) }
+        if (message.status === 'completed') { setAgentStatusKey('status.dashboardReady'); setBusy(false); notify(t('toast.completed')); void loadReports(true) }
+        if (message.status === 'failed' || message.status === 'cancelled') {
+          setAgentStatusKey(message.status === 'failed' ? 'status.agentFailed' : 'status.agentCancelled')
+          setBusy(false)
+          notify(message.error || t('toast.notCompleted'))
+        }
       })
     }
     return () => { window.clearInterval(poller); channelRef.current?.close() }
-  }, [loadReports, notify])
+  }, [loadReports, notify, t])
 
   const startAnalysis = async (payload: Record<string, unknown>) => {
     const channel = channelRef.current
-    if (!channel) { notify('当前浏览器不支持 App Agent 会话。'); return }
+    if (!channel) { notify(t('error.channelUnsupported')); return }
     setBusy(true)
-    setAgentStatus('Injecting skills…')
+    setAgentStatusKey('status.injectingSkills')
     try {
       const prepareResponse = await fetch(`${API}/prepare`, { method: 'POST' })
       const prepared = await prepareResponse.json() as { ready?: boolean; error?: string }
-      if (!prepareResponse.ok || prepared.ready !== true) throw new Error(prepared.error || '无法准备 App skills')
+      if (!prepareResponse.ok || prepared.ready !== true) throw new Error(prepared.error || t('error.prepareSkills'))
       const analysisId = createCaseId()
       const requestId = createRequestId()
       activeRequestRef.current = requestId
-      setAgentStatus('Opening Agent…')
-      const optimistic: ReportSummary = { id: analysisId, title: 'New investigation', source: String(payload.source || ''), summary: '', status: 'processing', updatedAt: new Date().toISOString(), pending: true }
+      setAgentStatusKey('status.openingAgent')
+      const optimistic: ReportSummary = { id: analysisId, title: t('case.newInvestigation'), source: String(payload.source || ''), summary: '', status: 'processing', updatedAt: new Date().toISOString(), pending: true }
       setSelectedId(analysisId)
       setReport({ ...optimistic, markdown: '', visualization: null })
       setReports(current => [optimistic, ...current])
-      channel.postMessage({ source: 'deepdeck-app-page', type: 'invoke', clientId: clientIdRef.current, requestId, appId: APP_ID, actionId: 'analyze', payload: { ...payload, analysisId }, openSession: true })
-      notify('Skills 已注入，正在打开 Agent 调查。')
+      channel.postMessage({ source: 'deepdeck-app-page', type: 'invoke', clientId: clientIdRef.current, requestId, appId: APP_ID, actionId: 'analyze', payload: { ...payload, analysisId, uiLocale: locale }, openSession: true })
+      notify(t('toast.skillsInjected'))
     } catch (error) {
       setBusy(false)
-      setAgentStatus('Skill injection failed')
+      setAgentStatusKey('status.injectionFailed')
       notify(error instanceof Error ? error.message : String(error))
     }
   }
 
   return (
+    <I18nContext.Provider value={{ locale, t }}>
     <div className="appShell">
       <aside className="caseRail">
-        <div className="brand"><BrandMark /><div><b>Video Sherlock</b><small>Evidence console</small></div></div>
-        <div className="railHeading"><span>Case files</span><button onClick={() => void loadReports(false)} aria-label="刷新案件">↻</button></div>
+        <div className="brand"><BrandMark /><div><b>Video Sherlock</b><small>{t('brand.console')}</small></div></div>
+        <div className="railHeading"><span>{t('rail.caseFiles')}</span><button className="railRefresh" onClick={() => void loadReports(false)} aria-label={t('rail.refresh')}><RefreshIcon /></button></div>
         <nav className="caseList">
-          {!reports.length && <p className="noCases">还没有案件。提交第一个视频开始分析。</p>}
-          {reports.map(item => { const zh = item.id.endsWith('-zh'); return <button className={selectedId === item.id ? 'active' : ''} key={item.id} onClick={() => setSelectedId(item.id)}><b>{item.title || item.id}</b><span><i className={item.status} />{item.visualized ? (zh ? '可视化完成' : 'Visualization ready') : item.status === 'complete' ? (zh ? '报告完成' : 'Report ready') : (zh ? '分析中' : 'Analyzing')} · {formatDate(item.updatedAt, zh ? 'zh-CN' : 'en-US')}</span></button> })}
+          {!reports.length && <p className="noCases">{t('rail.empty')}</p>}
+          {reports.map(item => <button className={selectedId === item.id ? 'active' : ''} key={item.id} onClick={() => setSelectedId(item.id)}><b>{item.title || item.id}</b><span><i className={item.status} />{item.visualized ? t('case.visualizationReady') : item.status === 'complete' ? t('case.reportReady') : t('case.analyzing')} · {formatDate(item.updatedAt, locale === 'zh' ? 'zh-CN' : 'en-US')}</span></button>)}
         </nav>
-        <footer>LOCAL-FIRST VIDEO INTELLIGENCE<br />字幕 · ASR · 语义帧检索 · 证据报告</footer>
+        <footer>{t('rail.footer')}<br />{t('rail.footerDetail')}</footer>
       </aside>
       <main className="mainStage">
-        <header className="topBar"><span>Workspace / <b>{selectedId || 'Overview'}</b></span><div className="topActions"><em>{agentStatus}</em><button type="button" onClick={() => setComposerOpen(true)}>＋ 新建调查</button></div></header>
-        <div className="stageScroll"><CaseReader report={report} loading={loading} /></div>
+        <header className="topBar"><span>{t('workspace.label')} / <b>{selectedId || t('workspace.overview')}</b></span><div className="topActions"><em>{t(agentStatusKey)}</em><button type="button" onClick={() => setComposerOpen(true)}>＋ {t('action.newInvestigation')}</button></div></header>
+        <div className="stageScroll"><CaseReader report={report} loading={loading} onCreate={() => setComposerOpen(true)} /></div>
       </main>
-      <button type="button" className={`composerBackdrop ${composerOpen ? 'open' : ''}`} onClick={() => setComposerOpen(false)} aria-label="关闭新建调查面板" />
+      <button type="button" className={`composerBackdrop ${composerOpen ? 'open' : ''}`} onClick={() => setComposerOpen(false)} aria-label={t('action.closeComposer')} />
       <Composer onSubmit={startAnalysis} busy={busy} open={composerOpen} onClose={() => setComposerOpen(false)} />
       <div className={`toast ${toast ? 'show' : ''}`}>{toast}</div>
     </div>
+    </I18nContext.Provider>
   )
 }
 

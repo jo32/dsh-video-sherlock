@@ -18,8 +18,10 @@ const ARTIFACT_PATH = API_PATH + '/artifact'
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
 const BUNDLED_SKILLS = ['analyze-video', 'video-sherlock-visualize']
 
-const PAGE_HTML = `<!doctype html>
-<html lang="zh-CN">
+function pageHtml(locale) {
+  const documentLanguage = locale === 'zh' ? 'zh-CN' : 'en'
+  return `<!doctype html>
+<html lang="${documentLanguage}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -32,6 +34,7 @@ const PAGE_HTML = `<!doctype html>
   <script src="${APP_JS_PATH}" defer></script>
 </body>
 </html>`
+}
 
 export const inject = ['appConversations', 'webServer']
 
@@ -106,6 +109,23 @@ function sameOrigin(request) {
 
 function safeAnalysisId(value) {
   return typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,79}$/i.test(value) ? value : ''
+}
+
+function safeUiLocale(value) {
+  if (typeof value !== 'string') return ''
+  const primary = value.trim().toLowerCase().split('-')[0]
+  return primary === 'zh' || primary === 'en' ? primary : ''
+}
+
+function requestUiLocale(request, url) {
+  const explicit = safeUiLocale(url.searchParams.get('locale'))
+  if (explicit) return explicit
+  const requested = typeof request.headers['accept-language'] === 'string' ? request.headers['accept-language'].split(',') : []
+  for (const entry of requested) {
+    const locale = safeUiLocale(entry.split(';')[0])
+    if (locale) return locale
+  }
+  return 'en'
 }
 
 async function readJsonFile(path, fallback = {}) {
@@ -262,7 +282,8 @@ export function apply(ctx) {
     kind: 'exact', path: PAGE_PATH,
     async handler(request, response) {
       if (request.method !== 'GET') { response.writeHead(405).end(); return }
-      const body = Buffer.from(PAGE_HTML)
+      const url = new URL(request.url || PAGE_PATH, 'http://local')
+      const body = Buffer.from(pageHtml(requestUiLocale(request, url)))
       response.writeHead(200, {
         'content-type': 'text/html; charset=utf-8',
         'content-length': body.length,
@@ -293,9 +314,12 @@ export function apply(ctx) {
     kind: 'exact', path: OPEN_PATH,
     async handler(request, response) {
       if (request.method !== 'POST' || !sameOrigin(request)) { sendJson(response, 403, { error: 'same-origin POST required' }); return }
-      const pageUrl = new URL(PAGE_PATH, request.headers.origin).href
-      const opened = typeof process.send === 'function' ? process.send({ type: 'deepdeck:open-app-window', url: pageUrl }) : false
-      sendJson(response, 200, { opened, url: pageUrl })
+      const url = new URL(request.url || OPEN_PATH, 'http://local')
+      const pageUrl = new URL(PAGE_PATH, request.headers.origin)
+      pageUrl.searchParams.set('locale', requestUiLocale(request, url))
+      const href = pageUrl.href
+      const opened = typeof process.send === 'function' ? process.send({ type: 'deepdeck:open-app-window', url: href }) : false
+      sendJson(response, 200, { opened, url: href })
     },
   }), APP_ID + ': App window bridge')
 

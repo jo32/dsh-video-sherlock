@@ -12,8 +12,11 @@ button{transition:background-color .15s ease,border-color .15s ease,color .15s e
 .brand b{font-size:14px;font-weight:600;letter-spacing:-.01em}
 .brand small{color:#666;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;letter-spacing:.12em}
 .railHeading{padding-top:18px;color:#666;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px}
-.railHeading button{border-color:#2a2a2a;background:#0a0a0a;color:#888}
-.railHeading button:hover{border-color:#555;background:#111;color:#fff}
+.railHeading button{border-color:transparent;background:transparent;color:#737373}
+.railHeading button:hover{border-color:#2a2a2a;background:#111;color:#ededed}
+.railHeading button:active{background:#191919}
+.railRefresh{display:grid;place-items:center;padding:0}
+.railRefresh svg{width:15px;height:15px}
 .caseList>button{border-color:transparent!important;border-radius:7px!important;background:transparent!important}
 .caseList>button:hover{background:#0a0a0a!important}
 .caseList>button.active{border-color:#333!important;background:#111!important;box-shadow:none!important}
@@ -25,6 +28,16 @@ button{transition:background-color .15s ease,border-color .15s ease,color .15s e
 .topActions button:hover{background:#fff}
 .stageScroll{background:#000}
 .caseReader{padding-top:34px}
+.emptyStage{display:flex;min-height:calc(100vh - 150px);align-items:center;justify-content:center;padding:56px;text-align:left}
+.emptyContent{width:min(100%,560px)}
+.emptyIcon{display:grid;place-items:center;width:42px;height:42px;margin-bottom:24px;border:1px solid #2a2a2a;border-radius:9px;background:#080808;color:#a1a1a1}
+.emptyIcon svg{width:23px;height:23px}
+.emptyStage h1{margin:0;color:#ededed;font-size:28px;font-weight:600;line-height:1.2;letter-spacing:-.035em}
+.emptyStage p{max-width:520px;margin:11px 0 0;color:#888;font-size:14px;line-height:1.65}
+.emptyAction{display:inline-flex;align-items:center;gap:18px;height:38px;margin-top:24px;padding:0 14px;border:1px solid #ededed;border-radius:6px;background:#ededed;color:#000;font-size:12px;font-weight:600}
+.emptyAction:hover{background:#fff}.emptyAction span{font-size:15px;font-weight:400}
+.emptyCapabilities{display:flex;flex-wrap:wrap;gap:9px 20px;margin-top:32px;padding-top:17px;border-top:1px solid #222;color:#737373;font-size:11px}
+.emptyCapabilities span{display:inline-flex;align-items:center;gap:7px}.emptyCapabilities i{display:grid;place-items:center;width:15px;height:15px;border:1px solid #333;border-radius:50%;color:#a1a1a1;font-size:9px;font-style:normal}
 .eyebrow{color:#888!important;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em}
 .caseHeader{border-bottom:1px solid #262626;padding-bottom:26px}
 .caseHeader h1{color:#ededed;font-weight:600;letter-spacing:-.045em}

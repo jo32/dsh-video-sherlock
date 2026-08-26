@@ -1,6 +1,6 @@
 {
   "name": "@deepdeck-apps/video-sherlock-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Video Sherlock — agent-driven video evidence dashboards for DeepDeck",
@@ -44,6 +44,7 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
         "@deepdeck/dsh-client-ui-desktop-chrome",
         "@deepdeck/dsh-app-conversations"
       ],
@@ -51,7 +52,9 @@
     }
   },
   "scripts": {
-    "build": "bun run build.mjs"
+    "build": "bun run build.mjs",
+    "check": "bunx tsc --noEmit",
+    "test": "bun test"
   },
   "files": [
     "lib/**",

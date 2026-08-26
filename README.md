@@ -67,10 +67,22 @@ profile so the required App runtime is present.
 - Full Markdown audit report with preserved raw evidence
 - Guarded same-case artifact serving with path-containment checks
 - Responsive monochrome interface for standalone DeepDeck windows
+- Chinese and English UI that follows DeepDeck's language setting live
 
 Generated investigations stay in the App Workspace under `video-analyses/` and
 are intentionally excluded from Git. Large source videos, transcripts, indexes
 and model outputs remain local unless the user explicitly publishes them.
+
+## Internationalization
+
+The App interface follows DeepDeck's active **中文 / English** preference when
+the window opens and updates live when that preference changes. Direct visits
+to the standalone App URL fall back to the browser's requested language.
+
+UI locale and investigation content language are intentionally separate. The
+**Content language** field controls transcription and generated evidence; a UI
+language switch localizes navigation, controls, status text and accessibility
+labels without translating or mutating existing reports.
 
 ## Development
 
@@ -78,7 +90,8 @@ Requires Bun 1.4 or newer.
 
 ```bash
 bun install --frozen-lockfile
-bunx tsc --noEmit
+bun run check
+bun test
 bun run build
 ```
 
