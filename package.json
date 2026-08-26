@@ -1,0 +1,72 @@
+{
+  "name": "@deepdeck-apps/video-sherlock-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Video Sherlock — agent-driven video evidence dashboards for DeepDeck",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jo32/dsh-video-sherlock.git"
+  },
+  "homepage": "https://github.com/jo32/dsh-video-sherlock#readme",
+  "bugs": {
+    "url": "https://github.com/jo32/dsh-video-sherlock/issues"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/client.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./invariant": {
+      "types": "./lib/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "app": {
+      "id": "video-sherlock-app",
+      "title": "Video Sherlock"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepdeck/dsh-client-ui-desktop-chrome",
+        "@deepdeck/dsh-app-conversations"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "bun run build.mjs"
+  },
+  "files": [
+    "lib/**",
+    ".agents/skills/analyze-video/**",
+    ".agents/skills/video-sherlock-visualize/**",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dependencies": {
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.16",
+    "@types/react-dom": "19.1.9",
+    "typescript": "5.9.3"
+  }
+}

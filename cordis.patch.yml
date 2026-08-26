@@ -1,0 +1,3 @@
+- insert:
+    - id: video-sherlock-app
+      name: '@deepdeck-apps/video-sherlock-app'
