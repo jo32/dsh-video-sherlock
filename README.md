@@ -20,6 +20,12 @@ keyframes stay synchronized while the original audit report remains available.
 
 ![Video Sherlock running with DeepDeck](docs/images/deepdeck-video-sherlock.png)
 
+The empty workspace uses the same restrained desktop UI and opens the
+investigation composer directly. This screenshot shows the English locale;
+中文 follows the same layout.
+
+![Video Sherlock localized empty workspace](docs/images/video-sherlock-empty-state.jpg)
+
 ## Install with DeepDeck (recommended)
 
 1. Open **Settings → Apps** in DeepDeck.
