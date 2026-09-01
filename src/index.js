@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs'
-import { cp, mkdir, readdir, readFile, realpath, stat } from 'node:fs/promises'
+import { cp, mkdir, readdir, readFile, realpath, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -200,15 +200,32 @@ async function videoArtifactPath(directory, manifest) {
   }
 }
 
+function reportTranscript(value) {
+  const segments = Array.isArray(value?.segments) ? value.segments : []
+  return {
+    engine: typeof value?.engine === 'string' ? value.engine.slice(0, 80) : 'none',
+    language: typeof value?.language === 'string' ? value.language.slice(0, 80) : 'unknown',
+    segments: segments.slice(0, 50000).flatMap(segment => {
+      if (!segment || typeof segment !== 'object') return []
+      const start = Number(segment.start_seconds)
+      const end = Number(segment.end_seconds)
+      const text = typeof segment.text === 'string' ? segment.text.trim().slice(0, 4000) : ''
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || !text) return []
+      return [{ start_seconds: start, end_seconds: end, text }]
+    }),
+  }
+}
+
 async function getReport(analysesRoot, id) {
   const directory = join(analysesRoot, id)
   const directoryStats = await stat(directory)
   if (!directoryStats.isDirectory()) throw new Error('report not found')
-  const [manifest, metadata, analysis, visualization] = await Promise.all([
+  const [manifest, metadata, analysis, visualization, transcript] = await Promise.all([
     readJsonFile(join(directory, 'manifest.json')),
     readJsonFile(join(directory, 'raw', 'metadata.json')),
     readJsonFile(join(directory, 'raw', 'analysis.json')),
     readJsonFile(join(directory, 'visualization.json'), null),
+    readJsonFile(join(directory, 'raw', 'transcript.json')),
   ])
   let markdown = ''
   let reportStats
@@ -229,6 +246,7 @@ async function getReport(analysesRoot, id) {
     updatedAt: latestUpdatedAt(directoryStats, reportStats, visualizationStats),
     markdown,
     visualization,
+    transcript: reportTranscript(transcript),
     videoPath,
   }
 }
@@ -339,11 +357,23 @@ export function apply(ctx) {
   ctx.effect(() => webServer.register({
     kind: 'exact', path: REPORTS_PATH,
     async handler(request, response) {
-      if (request.method !== 'GET') { response.writeHead(405).end(); return }
+      if (request.method !== 'GET' && request.method !== 'DELETE') { response.writeHead(405).end(); return }
       try {
         const url = new URL(request.url || REPORTS_PATH, 'http://local')
         const id = safeAnalysisId(url.searchParams.get('id'))
         if (url.searchParams.has('id') && !id) { sendJson(response, 400, { error: 'invalid report id' }); return }
+        if (request.method === 'DELETE') {
+          if (!sameOrigin(request)) { sendJson(response, 403, { error: 'same-origin DELETE required' }); return }
+          if (!id) { sendJson(response, 400, { error: 'report id required' }); return }
+          const root = await realpath(analysesRoot)
+          const reportDirectory = await realpath(join(analysesRoot, id))
+          if (!reportDirectory.startsWith(root + sep)) throw new Error('report path escapes analyses root')
+          const reportStats = await stat(reportDirectory)
+          if (!reportStats.isDirectory()) throw new Error('report not found')
+          await rm(join(analysesRoot, id), { recursive: true, force: false, maxRetries: 2 })
+          sendJson(response, 200, { deleted: id })
+          return
+        }
         sendJson(response, 200, id ? await getReport(analysesRoot, id) : { reports: await listReports(analysesRoot) })
       } catch (error) {
         sendJson(response, 404, { error: error instanceof Error ? error.message : String(error) })

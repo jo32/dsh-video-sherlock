@@ -5,6 +5,7 @@ import './styles.css'
 import './player.css'
 import './layout-fix.css'
 import './vercel.css'
+import './features.css'
 
 const APP_ID = 'video-sherlock-app'
 const API = '/api/apps/video-sherlock-app'
@@ -94,9 +95,22 @@ type Visualization = {
   }
 }
 
+type TranscriptSegment = {
+  start_seconds: number
+  end_seconds: number
+  text: string
+}
+
+type Transcript = {
+  engine: string
+  language: string
+  segments: TranscriptSegment[]
+}
+
 type ReportDetail = ReportSummary & {
   markdown: string
   visualization: Visualization | null
+  transcript?: Transcript
   videoPath?: string
 }
 
@@ -168,12 +182,54 @@ function normalizeVisualization(value: Visualization | null): Visualization | nu
   }
 }
 
+function rollingCaptionOverlap(previous: string, current: string): number {
+  const maximum = Math.min(previous.length, current.length, 800)
+  for (let length = maximum; length >= 6; length -= 1) {
+    if (previous.endsWith(current.slice(0, length))) return length
+  }
+  return 0
+}
+
+function normalizeCaptionSegments(segments: TranscriptSegment[]): TranscriptSegment[] {
+  const normalized: TranscriptSegment[] = []
+  let previous: TranscriptSegment | undefined
+  for (const segment of segments) {
+    let text = segment.text.trim()
+    if (previous && segment.start_seconds - previous.end_seconds <= 0.35) {
+      text = text.slice(rollingCaptionOverlap(previous.text.trim(), text)).trim()
+    }
+    if (text) normalized.push({ ...segment, text })
+    previous = segment
+  }
+  return normalized
+}
+
+function captionsAt(segments: TranscriptSegment[], time: number): TranscriptSegment[] {
+  let low = 0
+  let high = segments.length
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    if (segments[middle].start_seconds <= time) low = middle + 1
+    else high = middle
+  }
+  const result: TranscriptSegment[] = []
+  for (let index = Math.max(0, low - 3); index < Math.min(segments.length, low + 2); index += 1) {
+    const segment = segments[index]
+    if (time >= segment.start_seconds && time < segment.end_seconds) result.push(segment)
+  }
+  return result.slice(-1)
+}
+
 function BrandMark() {
   return <div className="brandMark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="6.25" stroke="currentColor" strokeWidth="1.5" /><path d="m14.6 14.6 5.15 5.15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><path d="m8.75 7.5 3.75 2.5-3.75 2.5v-5Z" fill="currentColor" /></svg></div>
 }
 
 function RefreshIcon() {
   return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M15.25 6.75A6.25 6.25 0 1 0 16 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><path d="M15.25 3.75v3h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+}
+
+function TrashIcon() {
+  return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4.75 6.25h10.5M8 3.75h4M6.25 6.25l.5 9h6.5l.5-9M8.5 8.75v4M11.5 8.75v4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
 
 function EmptyStage({ onCreate }: { onCreate: () => void }) {
@@ -203,8 +259,9 @@ function Panel({ title, detail, children, className = '' }: React.PropsWithChild
   return <section className={`vizPanel ${className}`}><header><b>{title}</b><span>{detail}</span></header>{children}</section>
 }
 
-function EvidencePlayer({ visualization, caseId, videoPath, videoRef, currentTime, onTimeChange, onSeek }: {
+function EvidencePlayer({ visualization, transcript, caseId, videoPath, videoRef, currentTime, onTimeChange, onSeek }: {
   visualization: Visualization
+  transcript?: Transcript
   caseId: string
   videoPath: string
   videoRef: React.RefObject<HTMLVideoElement | null>
@@ -213,6 +270,10 @@ function EvidencePlayer({ visualization, caseId, videoPath, videoRef, currentTim
   onSeek: (time: number, autoplay?: boolean, reveal?: boolean) => void
 }) {
   const { t } = useI18n()
+  const captionSegments = useMemo(() => normalizeCaptionSegments(transcript?.segments ?? []), [transcript])
+  const [captionsEnabled, setCaptionsEnabled] = useState(captionSegments.length > 0)
+  useEffect(() => setCaptionsEnabled(captionSegments.length > 0), [transcript])
+  const activeCaptions = captionsEnabled ? captionsAt(captionSegments, currentTime) : []
   const duration = Math.max(1, visualization.duration_seconds || 0)
   const progress = Math.max(0, Math.min(100, currentTime / duration * 100))
   const activeTopic = visualization.timeline.find(item => currentTime >= item.start_seconds && currentTime < item.end_seconds)
@@ -224,7 +285,7 @@ function EvidencePlayer({ visualization, caseId, videoPath, videoRef, currentTim
   const poster = visualization.frames[0]?.path ? artifactUrl(caseId, visualization.frames[0].path) : undefined
   return (
     <section className="evidencePlayer" aria-label={t('player.aria')}>
-      <div className="playerHeading"><div><span className="liveDot" />{t('player.heading')}</div><p>{t('player.help')}</p></div>
+      <div className="playerHeading"><div><span className="liveDot" />{t('player.heading')}</div><div className="playerHeadingActions"><p>{t('player.help')}</p>{captionSegments.length > 0 && <button type="button" className={captionsEnabled ? 'captionToggle active' : 'captionToggle'} onClick={() => setCaptionsEnabled(value => !value)} aria-pressed={captionsEnabled} title={t('player.captionsSource', { engine: transcript?.engine || t('evidence.confidenceUnknown') })}>CC · {captionsEnabled ? t('player.captionsOn') : t('player.captionsOff')}</button>}</div></div>
       <div className="playerGrid">
         <div className="videoStage">
           <video
@@ -237,6 +298,7 @@ function EvidencePlayer({ visualization, caseId, videoPath, videoRef, currentTim
             onLoadedMetadata={event => onTimeChange(event.currentTarget.currentTime)}
             onTimeUpdate={event => onTimeChange(event.currentTarget.currentTime)}
           />
+          {!!activeCaptions.length && <div className="captionOverlay" aria-live="off">{activeCaptions.map((segment, index) => <span key={`${segment.start_seconds}-${index}`}>{segment.text}</span>)}</div>}
           <div className="timeReadout"><strong>{formatTime(currentTime)}</strong><span>/ {formatTime(duration)}</span></div>
         </div>
         <aside className="nowPanel">
@@ -333,7 +395,7 @@ function EvidenceWall({ frames, caseId, currentTime, onSeek }: { frames: Evidenc
   )
 }
 
-function EvidenceDashboard({ visualization, caseId, videoPath }: { visualization: Visualization; caseId: string; videoPath?: string }) {
+function EvidenceDashboard({ visualization, transcript, caseId, videoPath }: { visualization: Visualization; transcript?: Transcript; caseId: string; videoPath?: string }) {
   const { locale, t } = useI18n()
   const metrics = visualization.metrics ?? {} as Visualization['metrics']
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -351,7 +413,7 @@ function EvidenceDashboard({ visualization, caseId, videoPath }: { visualization
   return (
     <div className="dashboard">
       {visualization.summary && <div className="summaryCallout"><span>{t('dashboard.summary')}</span><p>{visualization.summary}</p></div>}
-      {videoPath && <div ref={playerRef}><EvidencePlayer visualization={visualization} caseId={caseId} videoPath={videoPath} videoRef={videoRef} currentTime={currentTime} onTimeChange={setCurrentTime} onSeek={seek} /></div>}
+      {videoPath && <div ref={playerRef}><EvidencePlayer visualization={visualization} transcript={transcript} caseId={caseId} videoPath={videoPath} videoRef={videoRef} currentTime={currentTime} onTimeChange={setCurrentTime} onSeek={seek} /></div>}
       {!videoPath && <div className="videoUnavailable">{t('dashboard.videoUnavailable')}</div>}
       <div className="metrics">
         <Metric value={formatTime(visualization.duration_seconds)} label={t('metrics.duration')} tone={0} />
@@ -427,7 +489,7 @@ function CaseReader({ report, loading, onCreate }: { report: ReportDetail | null
         <h1>{report.title}</h1>
         <p>{report.source || t('case.localSource')}</p>
       </header>
-      {visualization ? <EvidenceDashboard visualization={visualization} caseId={report.id} videoPath={report.videoPath} /> : (
+      {visualization ? <EvidenceDashboard visualization={visualization} transcript={report.transcript} caseId={report.id} videoPath={report.videoPath} /> : (
         <div className="pendingCard"><div className="scanMark small"><span /></div><div><b>{t('case.pendingTitle')}</b><p>{t('case.pendingBody')}</p></div></div>
       )}
       <ReportDocument markdown={report.markdown} caseId={report.id} />
@@ -475,6 +537,7 @@ function App() {
   const [agentStatusKey, setAgentStatusKey] = useState<CopyKey>('status.skillReady')
   const [busy, setBusy] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
+  const [deletingId, setDeletingId] = useState('')
   const [toast, setToast] = useState('')
   const channelRef = useRef<BroadcastChannel | null>(null)
   const clientIdRef = useRef(createRequestId())
@@ -564,6 +627,28 @@ function App() {
     return () => { window.clearInterval(poller); channelRef.current?.close() }
   }, [loadReports, notify, t])
 
+  const deleteAnalysis = async (item: ReportSummary) => {
+    if (item.pending || deletingId) return
+    if (!window.confirm(t('delete.confirm', { title: item.title || item.id }))) return
+    setDeletingId(item.id)
+    try {
+      const response = await fetch(`${API}/reports?id=${encodeURIComponent(item.id)}`, { method: 'DELETE' })
+      const value = await response.json() as { deleted?: string; error?: string }
+      if (!response.ok || value.deleted !== item.id) throw new Error(value.error || t('error.deleteReport'))
+      const remaining = reports.filter(reportItem => reportItem.id !== item.id)
+      setReports(remaining)
+      if (selectedId === item.id) {
+        setSelectedId(remaining[0]?.id || '')
+        setReport(null)
+      }
+      notify(t('toast.deleted'))
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error))
+    } finally {
+      setDeletingId('')
+    }
+  }
+
   const startAnalysis = async (payload: Record<string, unknown>) => {
     const channel = channelRef.current
     if (!channel) { notify(t('error.channelUnsupported')); return }
@@ -598,7 +683,7 @@ function App() {
         <div className="railHeading"><span>{t('rail.caseFiles')}</span><button className="railRefresh" onClick={() => void loadReports(false)} aria-label={t('rail.refresh')}><RefreshIcon /></button></div>
         <nav className="caseList">
           {!reports.length && <p className="noCases">{t('rail.empty')}</p>}
-          {reports.map(item => <button className={selectedId === item.id ? 'active' : ''} key={item.id} onClick={() => setSelectedId(item.id)}><b>{item.title || item.id}</b><span><i className={item.status} />{item.visualized ? t('case.visualizationReady') : item.status === 'complete' ? t('case.reportReady') : t('case.analyzing')} · {formatDate(item.updatedAt, locale === 'zh' ? 'zh-CN' : 'en-US')}</span></button>)}
+          {reports.map(item => <div className={`caseRow ${selectedId === item.id ? 'active' : ''}`} key={item.id}><button type="button" className="caseSelect" onClick={() => setSelectedId(item.id)}><b>{item.title || item.id}</b><span><i className={item.status} />{item.visualized ? t('case.visualizationReady') : item.status === 'complete' ? t('case.reportReady') : t('case.analyzing')} · {formatDate(item.updatedAt, locale === 'zh' ? 'zh-CN' : 'en-US')}</span></button><button type="button" className="caseDelete" disabled={item.pending || deletingId === item.id} onClick={() => void deleteAnalysis(item)} aria-label={t('delete.action', { title: item.title || item.id })} title={item.pending ? t('delete.pendingDisabled') : t('delete.action', { title: item.title || item.id })}>{deletingId === item.id ? <span className="deleteSpinner" /> : <TrashIcon />}</button></div>)}
         </nav>
         <footer>{t('rail.footer')}<br />{t('rail.footerDetail')}</footer>
       </aside>
